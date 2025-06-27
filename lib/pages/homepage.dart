@@ -64,7 +64,10 @@ class _homepageState extends State<homepage> {
                 Container(
                   height: 100,
                   width: 100,
-                color: Colors.red,
+               // color: Colors.red,
+                  child: InkWell(
+                      onTap: (){},
+                      child: Image.asset("assets/efolder.jpg")),
 
               ),
                   Text(folderName),
