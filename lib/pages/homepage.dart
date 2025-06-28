@@ -12,10 +12,23 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  void _addRootFolder() {
-    FirebaseFirestore.instance.collection("folders").add({
+
+  void _addRootFolder() async {
+    final user = FirebaseAuth.instance.currentUser!;
+    final userDoc = FirebaseFirestore.instance.collection("folders").doc(user.uid);
+
+    // Create user document (if it doesn't already exist)
+    await userDoc.set({
+      'userName': user.displayName ?? 'User',
+      'email': user.email ?? 'Email',
+      'createdAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true)); // avoids overwriting if exists
+
+    // Create a root folder for the user inside their folders collection
+    await userDoc.collection('folders').doc(DateTime.now().millisecondsSinceEpoch.toString()).set({
       'name': 'New Folder',
       'createdAt': FieldValue.serverTimestamp(),
+      'isFolder':true
     });
   }
 
@@ -28,6 +41,27 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  void _addImage() async {
+    final user = FirebaseAuth.instance.currentUser!;
+    final userDoc = FirebaseFirestore.instance.collection("folders").doc(user.uid);
+
+
+    // Create user document (if it doesn't already exist)
+    await userDoc.set({
+      'userName': user.displayName ?? 'User',
+      'email': user.email ?? 'Email',
+      'createdAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true)); // avoids overwriting if exists
+
+    // Create a root folder for the user inside their folders collection
+    await userDoc.collection('folders').doc('IMG ${DateTime.now().millisecondsSinceEpoch.toString()}').set({
+      'name': 'Image',
+      'createdAt': FieldValue.serverTimestamp(),
+      'isFolder':false
+    });
+
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -37,11 +71,13 @@ class _HomePageState extends State<HomePage> {
         backgroundColor: Colors.white,
         actions: [
           IconButton(onPressed: _addRootFolder, icon: Icon(Icons.add)),
+          IconButton(onPressed: _addImage, icon: Icon(Icons.add_a_photo_outlined)),
           IconButton(onPressed: _signOut, icon: Icon(Icons.logout)),
+
         ],
       ),
       body: StreamBuilder(
-        stream: FirebaseFirestore.instance.collection('folders').snapshots(),
+        stream: FirebaseFirestore.instance.collection('folders').doc(FirebaseAuth.instance.currentUser!.uid).collection('folders').snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -73,18 +109,19 @@ class _HomePageState extends State<HomePage> {
                     width: 100,
                     child: InkWell(
                       onTap: () {
+                        folderData['isFolder'] ?
                         Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (_) => SubfolderPage(
-                              parentPath: 'folders',
+                              parentPath: 'folders/${FirebaseAuth.instance.currentUser!.uid}/folders',
                               folderId: folderId,
                               folderName: folderName,
                             ),
                           ),
-                        );
+                        ):();
                       },
-                      child: Image.asset("assets/efolder.jpg"),
+                      child: folderData['isFolder']? Image.asset("assets/efolder.jpg"):Image.asset("assets/efile.png"),
                     ),
                   ),
                   Text(folderName),

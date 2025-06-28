@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'subfolder.dart'; // for deeper levels
 
@@ -17,9 +18,18 @@ class SubfolderPage extends StatelessWidget {
   String get currentPath => '$parentPath/$folderId/subfolders';
 
   void _addSubfolder() {
-    FirebaseFirestore.instance.collection(currentPath).add({
+    FirebaseFirestore.instance.collection(currentPath).doc(DateTime.now().millisecondsSinceEpoch.toString()).set({
       'name': 'New Subfolder',
       'createdAt': FieldValue.serverTimestamp(),
+      'isFolder':true
+    });
+  }
+
+  void _addImage() async {
+    FirebaseFirestore.instance.collection(currentPath).doc('IMG ${DateTime.now().millisecondsSinceEpoch.toString()}').set({
+      'name': 'Image',
+      'createdAt': FieldValue.serverTimestamp(),
+      'isFolder':false
     });
   }
 
@@ -35,6 +45,7 @@ class SubfolderPage extends StatelessWidget {
         backgroundColor: Colors.white,
         actions: [
           IconButton(icon: Icon(Icons.add), onPressed: _addSubfolder),
+          IconButton(onPressed: _addImage, icon: Icon(Icons.add_a_photo_outlined)),
         ],
       ),
       body: StreamBuilder(
@@ -70,6 +81,7 @@ class SubfolderPage extends StatelessWidget {
                     width: 100,
                     child: InkWell(
                       onTap: () {
+                        data['isFolder'] ?
                         Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -79,9 +91,9 @@ class SubfolderPage extends StatelessWidget {
                               folderName: subfolderName,
                             ),
                           ),
-                        );
+                        ):();
                       },
-                      child: Image.asset("assets/efolder.jpg"),
+                      child: data['isFolder']? Image.asset("assets/efolder.jpg"):Image.asset("assets/efile.png"),
                     ),
                   ),
                   Text(subfolderName),
