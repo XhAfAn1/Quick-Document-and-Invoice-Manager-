@@ -33,7 +33,7 @@ class _SignInPageState extends State<SignInPage> {
       // Close loading indicator
       Navigator.of(context).pop();
 
-      Navigator.pushReplacement(context,MaterialPageRoute(builder: (context) => homepage(),));
+      Navigator.pushReplacement(context,MaterialPageRoute(builder: (context) => HomePage(),));
 
     } on FirebaseAuthException catch (e) {
       Navigator.of(context).pop(); // Close loading indicator if open
