@@ -1,7 +1,9 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:document_manager/pages/homepage.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 
 class SignInPage extends StatefulWidget {
@@ -65,9 +67,59 @@ class _SignInPageState extends State<SignInPage> {
     }
   }
 
-  Future<void> _signInwithGoogle(BuildContext context) async {
 
+  Future<void> _signInWithGoogle(BuildContext context) async {
+    try {
+      final GoogleSignIn googleSignIn = GoogleSignIn(scopes: ['email']);
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+
+      if (googleUser == null) {
+        // User cancelled the sign-in
+        return;
+      }
+
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      // Sign in to Firebase with Google credentials
+      UserCredential userCredential =
+      await FirebaseAuth.instance.signInWithCredential(credential);
+
+      final user = userCredential.user;
+      if (user == null) return;
+
+      // Create user document in Firestore if it doesn't exist
+      final userDoc = FirebaseFirestore.instance.collection("Users").doc(user.uid);
+      final docSnapshot = await userDoc.get();
+
+      if (!docSnapshot.exists) {
+        await userDoc.set({
+          'name': user.displayName ?? '',
+          'email': user.email ?? '',
+          'photoUrl': user.photoURL ?? '',
+          'uid': user.uid,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        print("User added to Firestore");
+      } else {
+        print("User already exists in Firestore");
+      }
+
+      print("Signed in as ${user.displayName}");
+      Navigator.pushReplacement(context,MaterialPageRoute(builder: (context) => HomePage(),));
+
+    } catch (e) {
+      print("Google sign-in error: $e");
+    }
   }
+
+
+
+
 
 
   @override
@@ -117,7 +169,7 @@ class _SignInPageState extends State<SignInPage> {
               width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: (){
-                  _signInwithGoogle(context);
+                  _signInWithGoogle(context);
                 },
                 icon: Icon(Icons.email),
                 label: Text('Sign In with Google'),
