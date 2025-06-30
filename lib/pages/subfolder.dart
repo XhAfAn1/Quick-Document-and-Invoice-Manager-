@@ -17,13 +17,46 @@ class SubfolderPage extends StatelessWidget {
 
   String get currentPath => '$parentPath/$folderId/subfolders';
 
-  void _addSubfolder() {
-    FirebaseFirestore.instance.collection(currentPath).doc(DateTime.now().millisecondsSinceEpoch.toString()).set({
-      'name': 'New Subfolder',
-      'createdAt': FieldValue.serverTimestamp(),
-      'isFolder':true
-    });
+  void _addSubfolder(BuildContext context, String currentPath) {
+    final TextEditingController folderNameController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Create New Subfolder"),
+        content: TextField(
+          controller: folderNameController,
+          decoration: const InputDecoration(hintText: "Enter subfolder name"),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(), // Cancel
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final folderName = folderNameController.text.trim();
+              if (folderName.isEmpty) return;
+
+              await FirebaseFirestore.instance
+                  .collection(currentPath)
+                  .doc(DateTime.now().millisecondsSinceEpoch.toString())
+                  .set({
+                'name': folderName,
+                'createdAt': FieldValue.serverTimestamp(),
+                'isFolder': true,
+              });
+
+              Navigator.of(context).pop(); // Close dialog
+            },
+            child: const Text("Create"),
+          ),
+        ],
+      ),
+    );
   }
+
 
   void _addImage() async {
     FirebaseFirestore.instance.collection(currentPath).doc('IMG ${DateTime.now().millisecondsSinceEpoch.toString()}').set({
@@ -44,7 +77,7 @@ class SubfolderPage extends StatelessWidget {
         title: Text(folderName),
         backgroundColor: Colors.white,
         actions: [
-          IconButton(icon: Icon(Icons.add), onPressed: _addSubfolder),
+          IconButton(icon: Icon(Icons.add), onPressed:(){ _addSubfolder(context,currentPath);}),
           IconButton(onPressed: _addImage, icon: Icon(Icons.add_a_photo_outlined)),
         ],
       ),

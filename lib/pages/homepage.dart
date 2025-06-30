@@ -13,24 +13,55 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
 
-  void _addRootFolder() async {
-    final user = FirebaseAuth.instance.currentUser!;
-    final userDoc = FirebaseFirestore.instance.collection("folders").doc(user.uid);
+  void _addRootFolder(BuildContext context) async {
+    final TextEditingController folderNameController = TextEditingController();
 
-    // Create user document (if it doesn't already exist)
-    await userDoc.set({
-      'userName': user.displayName ?? 'User',
-      'email': user.email ?? 'Email',
-      'createdAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true)); // avoids overwriting if exists
+    // Show dialog to enter folder name
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Create New Folder"),
+        content: TextField(
+          controller: folderNameController,
+          decoration: const InputDecoration(hintText: "Enter folder name"),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(), // Cancel
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final folderName = folderNameController.text.trim();
+              if (folderName.isEmpty) return;
 
-    // Create a root folder for the user inside their folders collection
-    await userDoc.collection('folders').doc(DateTime.now().millisecondsSinceEpoch.toString()).set({
-      'name': 'New Folder',
-      'createdAt': FieldValue.serverTimestamp(),
-      'isFolder':true
-    });
+              final user = FirebaseAuth.instance.currentUser!;
+              final userDoc = FirebaseFirestore.instance.collection("folders").doc(user.uid);
+
+              // Create or update user doc
+              await userDoc.set({
+                'userName': user.displayName ?? 'User',
+                'email': user.email ?? 'Email',
+                'createdAt': FieldValue.serverTimestamp(),
+              }, SetOptions(merge: true));
+
+              // Add folder with provided name
+              await userDoc.collection('folders').doc(DateTime.now().millisecondsSinceEpoch.toString()).set({
+                'name': folderName,
+                'createdAt': FieldValue.serverTimestamp(),
+                'isFolder': true,
+              });
+
+              Navigator.of(context).pop(); // Close dialog
+            },
+            child: const Text("Create"),
+          ),
+        ],
+      ),
+    );
   }
+
 
   void _signOut() async {
     await FirebaseAuth.instance.signOut();
@@ -70,7 +101,7 @@ class _HomePageState extends State<HomePage> {
         title: Text('Root Folders'),
         backgroundColor: Colors.white,
         actions: [
-          IconButton(onPressed: _addRootFolder, icon: Icon(Icons.add)),
+          IconButton(onPressed:(){ _addRootFolder(context);}, icon: Icon(Icons.add)),
           IconButton(onPressed: _addImage, icon: Icon(Icons.add_a_photo_outlined)),
           IconButton(onPressed: _signOut, icon: Icon(Icons.logout)),
 
