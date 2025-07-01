@@ -129,7 +129,8 @@ class SubfolderPage extends StatelessWidget {
                       child: data['isFolder']? Image.asset("assets/efolder.jpg"):Image.asset("assets/efile.png"),
                     ),
                   ),
-                  Text(subfolderName),
+                  Text(subfolderName,overflow: TextOverflow.ellipsis,
+                    maxLines: 1,),
                 ],
               );
             },
