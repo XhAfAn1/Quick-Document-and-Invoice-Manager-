@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:focused_menu/focused_menu.dart';
+import 'package:focused_menu/modals.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:http/http.dart' as http;
@@ -397,57 +399,67 @@ class _SubfolderPageState extends State<SubfolderPage> {
               final name = data['name'] ?? 'Unnamed';
               final webViewLink = data['webViewLink'];
 
-              return Column(
-                children: [
-                  SizedBox(
-                    height: 100,
-                    width: 100,
-                    child: InkWell(
-                      onTap: () {
-                        if (isFolder) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => SubfolderPage(
-                                parentPath: currentPath,
-                                folderId: doc.id,
-                                folderName: name,
-                              ),
-                            ),
-                          );
-                        } else if (webViewLink != null) {
-                          _showImagePreview(context, webViewLink);
-                        }
-                      },
-                      child: isFolder
-                          ? Image.asset("assets/efolder.jpg")
-                          : webViewLink != null
-                          ? Image.network(
-                        webViewLink,
-                        fit: BoxFit.cover,
-                        loadingBuilder: (context, child, progress) {
-                          if (progress == null) return child;
-                          return Center(
-                            child: CircularProgressIndicator(
-                              value: progress.expectedTotalBytes != null
-                                  ? progress.cumulativeBytesLoaded /
-                                  progress.expectedTotalBytes!
-                                  : null,
-                            ),
-                          );
-                        },
-                        errorBuilder: (context, error, stackTrace) =>
-                            Image.asset("assets/efile.png"),
-                      )
-                          : Image.asset("assets/efile.png"),
-                    ),
-                  ),
-                  Text(
-                    name,
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                  ),
+              return FocusedMenuHolder(
+                menuWidth: 220,
+                blurSize: 0,
+                blurBackgroundColor: Colors.white,
+                onPressed: (){},
+                menuItems: [
+                  FocusedMenuItem(title: Text("Delete"), onPressed: (){},trailingIcon: Icon(Icons.delete_outline)),
+                  FocusedMenuItem(title: Text("Rename"), onPressed: (){},trailingIcon: Icon(Icons.drive_file_rename_outline)),
                 ],
+                child: Column(
+                  children: [
+                    SizedBox(
+                      height: 100,
+                      width: 100,
+                      child: InkWell(
+                        onTap: () {
+                          if (isFolder) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => SubfolderPage(
+                                  parentPath: currentPath,
+                                  folderId: doc.id,
+                                  folderName: name,
+                                ),
+                              ),
+                            );
+                          } else if (webViewLink != null) {
+                            _showImagePreview(context, webViewLink);
+                          }
+                        },
+                        child: isFolder
+                            ? Image.asset("assets/efolder.jpg")
+                            : webViewLink != null
+                            ? Image.network(
+                          webViewLink,
+                          fit: BoxFit.cover,
+                          loadingBuilder: (context, child, progress) {
+                            if (progress == null) return child;
+                            return Center(
+                              child: CircularProgressIndicator(
+                                value: progress.expectedTotalBytes != null
+                                    ? progress.cumulativeBytesLoaded /
+                                    progress.expectedTotalBytes!
+                                    : null,
+                              ),
+                            );
+                          },
+                          errorBuilder: (context, error, stackTrace) =>
+                              Image.asset("assets/efile.png"),
+                        )
+                            : Image.asset("assets/efile.png"),
+                      ),
+                    ),
+                    Text(
+                      name,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ],
+                ),
               );
             },
           );
