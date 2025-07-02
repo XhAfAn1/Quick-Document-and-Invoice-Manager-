@@ -3,6 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:document_manager/pages/subfolder.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:focused_menu/focused_menu.dart';
+import 'package:focused_menu/modals.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:http/http.dart' as http;
@@ -114,28 +116,9 @@ class _HomePageState extends State<HomePage> {
       final user = FirebaseAuth.instance.currentUser!;
       final firebasePath = 'folders/${user.uid}/folders';
 
-      final saveLocation = await showDialog<String>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text("Save To"),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, 'firebase'),
-              child: const Text("Firebase Storage"),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, 'drive'),
-              child: const Text("Google Drive"),
-            ),
-          ],
-        ),
-      );
 
-      if (saveLocation == 'firebase') {
-        await _saveToFirebase(File(pickedFile.path));
-      } else if (saveLocation == 'drive') {
-        await _uploadToGoogleDrive(File(pickedFile.path), firebasePath);
-      }
+      await _uploadToGoogleDrive(File(pickedFile.path), firebasePath);
+
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: ${e.toString()}')),
@@ -143,28 +126,6 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _saveToFirebase(File image) async {
-    final user = FirebaseAuth.instance.currentUser!;
-    final userDoc = FirebaseFirestore.instance.collection("folders").doc(user.uid);
-
-    await userDoc.set({
-      'userName': user.displayName ?? 'User',
-      'email': user.email ?? 'Email',
-      'createdAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-
-    await userDoc.collection('folders').doc('IMG_${DateTime.now().millisecondsSinceEpoch}').set({
-      'name': 'Image ${DateTime.now().toString()}',
-      'createdAt': FieldValue.serverTimestamp(),
-      'isFolder': false,
-      'type': 'image',
-      'localPath': image.path,
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Image saved to Firebase')),
-    );
-  }
   Future<String?> _showImageNameDialog() async {
     final TextEditingController controller = TextEditingController();
     final GlobalKey<FormState> formKey = GlobalKey<FormState>();
@@ -451,57 +412,68 @@ class _HomePageState extends State<HomePage> {
                   final isFolder = itemData['isFolder'] ?? false;
                   final webViewLink = itemData['webViewLink'];
 
-                  return Column(
-                    children: [
-                      SizedBox(
-                        height: 100,
-                        width: 100,
-                        child: InkWell(
-                          onTap: () {
-                            if (isFolder) {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => SubfolderPage(
-                                    parentPath: 'folders/${FirebaseAuth.instance.currentUser!.uid}/folders',
-                                    folderId: itemId,
-                                    folderName: itemName,
-                                  ),
-                                ),
-                              );
-                            } else if (webViewLink != null) {
-                              _showImagePreview(context, webViewLink);
-                            }
-                          },
-                          child: isFolder
-                              ? Image.asset("assets/efolder.jpg")
-                              : webViewLink != null
-                              ? Image.network(
-                            webViewLink,
-                            fit: BoxFit.cover,
-                            loadingBuilder: (context, child, loadingProgress) {
-                              if (loadingProgress == null) return child;
-                              return Center(
-                                child: CircularProgressIndicator(
-                                  value: loadingProgress.expectedTotalBytes != null
-                                      ? loadingProgress.cumulativeBytesLoaded /
-                                      loadingProgress.expectedTotalBytes!
-                                      : null,
-                                ),
-                              );
-                            },
-                            errorBuilder: (context, error, stackTrace) =>
-                                Image.asset("assets/efile.png"),
-                          )
-                              : Image.asset("assets/efile.png"),
-                        ),
-                      ),
-                      Text(
-                        itemName,
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                      ),
+                  return FocusedMenuHolder(
+                    menuWidth: 220,
+                    blurSize: 0,
+                    blurBackgroundColor: Colors.white,
+                    onPressed: (){},
+                    menuItems: [
+                      FocusedMenuItem(title: Text("Delete"), onPressed: (){},trailingIcon: Icon(Icons.delete_outline)),
+                      FocusedMenuItem(title: Text("Rename"), onPressed: (){},trailingIcon: Icon(Icons.drive_file_rename_outline)),
                     ],
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          height: 100,
+                          width: 100,
+                          child: InkWell(
+                            onTap: () {
+                              if (isFolder) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => SubfolderPage(
+                                      parentPath: 'folders/${FirebaseAuth.instance.currentUser!.uid}/folders',
+                                      folderId: itemId,
+                                      folderName: itemName,
+                                    ),
+                                  ),
+                                );
+                              } else if (webViewLink != null) {
+                                _showImagePreview(context, webViewLink);
+                              }
+                            },
+
+                            child: isFolder
+                                ? Image.asset("assets/efolder.jpg")
+                                : webViewLink != null
+                                ? Image.network(
+                              webViewLink,
+                              fit: BoxFit.cover,
+                              loadingBuilder: (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return Center(
+                                  child: CircularProgressIndicator(
+                                    value: loadingProgress.expectedTotalBytes != null
+                                        ? loadingProgress.cumulativeBytesLoaded /
+                                        loadingProgress.expectedTotalBytes!
+                                        : null,
+                                  ),
+                                );
+                              },
+                              errorBuilder: (context, error, stackTrace) =>
+                                  Image.asset("assets/efile.png"),
+                            )
+                                : Image.asset("assets/efile.png"),
+                          ),
+                        ),
+                        Text(
+                          itemName,
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
+                      ],
+                    ),
                   );
                 },
               );
