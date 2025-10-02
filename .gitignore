@@ -32,8 +32,8 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
-/android
-/web
+/android/app/google-services.json
+
 # Symbolication related
 app.*.symbols
 
@@ -45,4 +45,4 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 /lib/backend/
-/web/
+
