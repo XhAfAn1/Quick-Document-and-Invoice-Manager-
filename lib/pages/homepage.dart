@@ -64,10 +64,14 @@ class _HomePageState extends State<HomePage> {
                 'createdAt': FieldValue.serverTimestamp(),
               }, SetOptions(merge: true));
 
+              // Create folder in Google Drive and get its ID
+              final String? driveFolderId = await _createFolderInGoogleDrive(folderName);
+
               await userDoc.collection('folders').doc(DateTime.now().millisecondsSinceEpoch.toString()).set({
                 'name': folderName,
                 'createdAt': FieldValue.serverTimestamp(),
                 'isFolder': true,
+                'driveFolderId': driveFolderId, // Store the Google Drive folder ID
               });
 
               Navigator.of(context).pop();
@@ -77,6 +81,40 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
     );
+  }
+
+  // Method to create folder in Google Drive
+  Future<String?> _createFolderInGoogleDrive(String folderName) async {
+    try {
+      final googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) return null;
+
+      final googleAuth = await googleUser.authentication;
+      final authHeaders = {
+        'Authorization': 'Bearer ${googleAuth.accessToken}',
+      };
+
+      final authenticatedClient = GoogleAuthClient(authHeaders);
+      final driveApi = drive.DriveApi(authenticatedClient);
+
+      // Get the root folder ID
+      String? parentFolderId = await _getOrCreateAppRootFolder(driveApi);
+
+      // Create the folder in Google Drive
+      final folder = drive.File()
+        ..name = folderName
+        ..mimeType = 'application/vnd.google-apps.folder';
+
+      if (parentFolderId != null) {
+        folder.parents = [parentFolderId];
+      }
+
+      final createdFolder = await driveApi.files.create(folder);
+      return createdFolder.id;
+    } catch (e) {
+      print('Error creating folder in Drive: $e');
+      return null;
+    }
   }
 
   void _signOut() async {
@@ -115,7 +153,6 @@ class _HomePageState extends State<HomePage> {
 
       final user = FirebaseAuth.instance.currentUser!;
       final firebasePath = 'folders/${user.uid}/folders';
-
 
       await _uploadToGoogleDrive(File(pickedFile.path), firebasePath);
 
@@ -169,6 +206,236 @@ class _HomePageState extends State<HomePage> {
       ),
     );
   }
+
+  // DELETE FUNCTIONALITY - FIXED FOR FOLDERS
+  Future<void> _deleteItem(String itemId, Map<String, dynamic> itemData, String parentPath) async {
+    final bool isFolder = itemData['isFolder'] ?? false;
+    final String itemName = itemData['name'] ?? 'Unnamed';
+    final String? driveId = itemData['driveId'];
+    final String? driveFolderId = itemData['driveFolderId'];
+
+    // Show confirmation dialog
+    final bool? shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Delete ${isFolder ? 'Folder' : 'File'}'),
+        content: Text('Are you sure you want to delete "$itemName"? ${isFolder ? 'This will also delete all contents inside the folder.' : ''} This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldDelete != true) return;
+
+    try {
+      if (isFolder) {
+        // Delete folder recursively (including all contents)
+        await _deleteFolderRecursively(itemId, parentPath, driveFolderId);
+      } else {
+        // Delete single file
+        await _deleteSingleItem(itemId, itemData, parentPath);
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('"$itemName" deleted successfully')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error deleting: ${e.toString()}')),
+      );
+    }
+  }
+
+  // DELETE SINGLE ITEM (FILE)
+  Future<void> _deleteSingleItem(String itemId, Map<String, dynamic> itemData, String parentPath) async {
+    final String? driveId = itemData['driveId'];
+
+    // Delete from Firebase
+    final docRef = _getDocumentReference(itemId, parentPath);
+    await docRef.delete();
+
+    // If it's a file and has a driveId, delete from Google Drive too
+    if (driveId != null && driveId.isNotEmpty) {
+      await _deleteFromGoogleDrive(driveId);
+    }
+  }
+
+  // DELETE FOLDER RECURSIVELY
+  Future<void> _deleteFolderRecursively(String folderId, String parentPath, String? driveFolderId) async {
+    // Get the folder document reference
+    final folderRef = _getDocumentReference(folderId, parentPath);
+
+    // Get all items inside this folder
+    final subItemsQuery = folderRef.collection('folders');
+    final subItemsSnapshot = await subItemsQuery.get();
+
+    // Delete all sub-items recursively
+    for (final doc in subItemsSnapshot.docs) {
+      final itemData = doc.data();
+      final isSubFolder = itemData['isFolder'] ?? false;
+      final subDriveFolderId = itemData['driveFolderId'];
+
+      if (isSubFolder) {
+        // Recursively delete sub-folders
+        await _deleteFolderRecursively(doc.id, '$parentPath/$folderId/folders', subDriveFolderId);
+      } else {
+        // Delete files
+        await _deleteSingleItem(doc.id, itemData, '$parentPath/$folderId/folders');
+      }
+    }
+
+    // Finally delete the folder itself from Firebase
+    await folderRef.delete();
+
+    // Also delete the Google Drive folder if it exists
+    if (driveFolderId != null && driveFolderId.isNotEmpty) {
+      await _deleteFromGoogleDrive(driveFolderId);
+    }
+  }
+
+  // GET DOCUMENT REFERENCE HELPER
+  DocumentReference _getDocumentReference(String itemId, String parentPath) {
+    final pathParts = parentPath.split('/');
+
+    if (pathParts.length <= 3) {
+      return FirebaseFirestore.instance
+          .collection('folders')
+          .doc(FirebaseAuth.instance.currentUser!.uid)
+          .collection('folders')
+          .doc(itemId);
+    } else {
+      return FirebaseFirestore.instance
+          .collection(pathParts[0])
+          .doc(pathParts[1])
+          .collection(pathParts[2])
+          .doc(pathParts[3])
+          .collection('folders')
+          .doc(itemId);
+    }
+  }
+
+  // DELETE FROM GOOGLE DRIVE
+  Future<void> _deleteFromGoogleDrive(String fileId) async {
+    try {
+      final googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) return;
+
+      final googleAuth = await googleUser.authentication;
+      final authHeaders = {
+        'Authorization': 'Bearer ${googleAuth.accessToken}',
+      };
+
+      final authenticatedClient = GoogleAuthClient(authHeaders);
+      final driveApi = drive.DriveApi(authenticatedClient);
+
+      await driveApi.files.delete(fileId);
+    } catch (e) {
+      print('Error deleting from Drive: $e');
+      // Don't show error to user if Drive deletion fails, as Firebase deletion already succeeded
+    }
+  }
+
+  // RENAME FUNCTIONALITY - FIXED FOR FOLDERS
+  Future<void> _renameItem(String itemId, Map<String, dynamic> itemData, String parentPath) async {
+    final bool isFolder = itemData['isFolder'] ?? false;
+    final String currentName = itemData['name'] ?? '';
+    final String? driveId = itemData['driveId'];
+    final String? driveFolderId = itemData['driveFolderId']; // For folders
+
+    final TextEditingController nameController = TextEditingController(text: currentName);
+
+    final String? newName = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Rename ${isFolder ? 'Folder' : 'File'}'),
+        content: TextField(
+          controller: nameController,
+          decoration: const InputDecoration(
+            hintText: "Enter new name",
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final trimmedName = nameController.text.trim();
+              if (trimmedName.isNotEmpty && trimmedName != currentName) {
+                Navigator.of(context).pop(trimmedName);
+              } else {
+                Navigator.of(context).pop();
+              }
+            },
+            child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+
+    if (newName == null || newName.isEmpty || newName == currentName) return;
+
+    try {
+      // Update in Firebase
+      final docRef = _getDocumentReference(itemId, parentPath);
+      await docRef.update({
+        'name': newName,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // For files: rename in Google Drive
+      if (!isFolder && driveId != null && driveId.isNotEmpty) {
+        await _renameInGoogleDrive(driveId, newName);
+      }
+      // For folders: rename Google Drive folder if it exists
+      else if (isFolder && driveFolderId != null && driveFolderId.isNotEmpty) {
+        await _renameInGoogleDrive(driveFolderId, newName);
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Renamed to "$newName"')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error renaming: ${e.toString()}')),
+      );
+    }
+  }
+
+  // RENAME IN GOOGLE DRIVE
+  Future<void> _renameInGoogleDrive(String fileId, String newName) async {
+    try {
+      final googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) return;
+
+      final googleAuth = await googleUser.authentication;
+      final authHeaders = {
+        'Authorization': 'Bearer ${googleAuth.accessToken}',
+      };
+
+      final authenticatedClient = GoogleAuthClient(authHeaders);
+      final driveApi = drive.DriveApi(authenticatedClient);
+
+      final driveFile = drive.File()..name = newName;
+      await driveApi.files.update(driveFile, fileId);
+    } catch (e) {
+      print('Error renaming in Drive: $e');
+      // Don't show error to user if Drive rename fails, as Firebase rename already succeeded
+    }
+  }
+
   Future<void> _uploadToGoogleDrive(File image, String firebasePath) async {
     final fileName = await _showImageNameDialog();
     setState(() {
@@ -203,9 +470,6 @@ class _HomePageState extends State<HomePage> {
       // Get or create root folder in user's personal Drive
       String? parentFolderId = await _getOrCreateAppRootFolder(driveApi);
 
-      // Upload to user's personal Drive
-      //final fileName = path.basename(image.path);
-      //final fileName = await _showImageNameDialog();
       final mimeType = lookupMimeType(image.path) ?? 'application/octet-stream';
 
       setState(() {
@@ -274,7 +538,8 @@ class _HomePageState extends State<HomePage> {
       String downloadLink,
       String fileName,
       String firebasePath,
-      ) async {
+      ) async
+  {
     final user = FirebaseAuth.instance.currentUser!;
     final pathParts = firebasePath.split('/');
 
@@ -411,6 +676,7 @@ class _HomePageState extends State<HomePage> {
                   final itemName = itemData['name'] ?? 'Unnamed';
                   final isFolder = itemData['isFolder'] ?? false;
                   final webViewLink = itemData['webViewLink'];
+                  final parentPath = 'folders/${FirebaseAuth.instance.currentUser!.uid}/folders';
 
                   return FocusedMenuHolder(
                     menuWidth: 220,
@@ -418,8 +684,16 @@ class _HomePageState extends State<HomePage> {
                     blurBackgroundColor: Colors.white,
                     onPressed: (){},
                     menuItems: [
-                      FocusedMenuItem(title: Text("Delete"), onPressed: (){},trailingIcon: Icon(Icons.delete_outline)),
-                      FocusedMenuItem(title: Text("Rename"), onPressed: (){},trailingIcon: Icon(Icons.drive_file_rename_outline)),
+                      FocusedMenuItem(
+                        title: const Text("Delete"),
+                        onPressed: () => _deleteItem(itemId, itemData, parentPath),
+                        trailingIcon: const Icon(Icons.delete_outline),
+                      ),
+                      FocusedMenuItem(
+                        title: const Text("Rename"),
+                        onPressed: () => _renameItem(itemId, itemData, parentPath),
+                        trailingIcon: const Icon(Icons.drive_file_rename_outline),
+                      ),
                     ],
                     child: Column(
                       children: [
@@ -433,9 +707,10 @@ class _HomePageState extends State<HomePage> {
                                   context,
                                   MaterialPageRoute(
                                     builder: (_) => SubfolderPage(
-                                      parentPath: 'folders/${FirebaseAuth.instance.currentUser!.uid}/folders',
+                                      parentPath: parentPath,
                                       folderId: itemId,
                                       folderName: itemName,
+                                      driveFolderId: itemData['driveFolderId'],
                                     ),
                                   ),
                                 );
